@@ -67,6 +67,23 @@ final class InterfaceStyleTests: XCTestCase {
         XCTAssertEqual(root.settingStyle(.softBlocks).style, .softBlocks)
     }
 
+    /// An in-place rewrite keeps only the keys the model does not describe, so
+    /// the list has to name every key the model writes, `style` among them.
+    func testModelledKeysNameEveryEncodedKeyAndNotTheNote() throws {
+        let full = ThemeDefinition(
+            id: "t", name: "T", author: "A", version: "1", baseAppearance: .dark, inherits: "carbon",
+            colors: ["ink": "#FFFFFF"], shadows: ["shadow1": ShadowDefinition(color: "#000000", radius: 2)],
+            fonts: ["mono": ThemeFont(regular: "Menlo")], logo: "logo.png", geometry: ["keyCornerRadius": 4],
+            effects: ["grain": 0.1], light: ThemeVariant(), dark: ThemeVariant(), style: .sticker
+        )
+        let object = try XCTUnwrap(
+            try JSONSerialization.jsonObject(with: JSONEncoder().encode(full)) as? [String: Any])
+        XCTAssertTrue(Set(object.keys).isSubset(of: ThemeDefinition.modelledKeys),
+                      "unlisted: \(Set(object.keys).subtracting(ThemeDefinition.modelledKeys))")
+        XCTAssertTrue(ThemeDefinition.modelledKeys.isSuperset(of: ["style", "simple"]))
+        XCTAssertFalse(ThemeDefinition.modelledKeys.contains("//"))
+    }
+
     func testRadiusScales() {
         XCTAssertEqual(InterfaceStyle.allCases.map(\.radiusScale), [1, 1.4, 2.0, 1.35])
     }

@@ -126,6 +126,16 @@ public struct ThemeDefinition: Codable, Sendable, Equatable {
         self.effects = effects
     }
 
+    private enum CodingKeys: String, CodingKey, CaseIterable {
+        case id, name, author, version, baseAppearance, inherits, colors, shadows, fonts
+        case logo, geometry, effects, light, dark, simple, style
+    }
+
+    /// Every top-level key the model reads and writes. A key outside this set (Llama
+    /// '97's `"//"` note) is the file's own, which an in-place rewrite keeps; a key
+    /// inside it that the new encoding leaves out was left out on purpose.
+    public static let modelledKeys: Set<String> = Set(CodingKeys.allCases.map(\.stringValue))
+
     /// Decoding is explicit only so that `simple` and `style` can be lenient: a block of the
     /// wrong shape, or from a newer app, must never stop the theme from loading.
     /// Encoding stays synthesised (a `nil` block is omitted).

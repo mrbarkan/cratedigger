@@ -72,13 +72,23 @@ enum BuiltInThemeEditing {
         return directories.compactMap { manifestURL(forThemeID: themeID, in: $0) }
     }
 
+    /// What an in-place save writes: the shipped definition with exactly the
+    /// tokens the draft changed against the seed the editor started from laid
+    /// over it (see `ThemeDefinition.merging`), and the draft's style.
+    static func patched(_ shipped: ThemeDefinition, draft: ThemeDefinition, seed: ThemeDefinition) -> ThemeDefinition {
+        shipped.merging(draft.tokensChanged(from: seed))
+    }
+
     /// Writes `definition` to `destination`, keeping any top-level keys the
     /// file already carries that the model does not describe.
     ///
     /// `Llama 97` opens with a `"//"` note explaining the theme, and decoding
     /// into `ThemeDefinition` drops anything it does not know about — so a
     /// plain re-encode would quietly delete a paragraph of the author's prose
-    /// the first time somebody nudged a colour. Also ends the file with a
+    /// the first time somebody nudged a colour. Only such keys are kept: a key
+    /// the model does describe and the new encoding omits was omitted on
+    /// purpose (Real Hardware is written as no `style` at all), so restoring it
+    /// would put back the value the edit took out. Also ends the file with a
     /// newline, which `JSONEncoder` does not.
     static func write(_ definition: ThemeDefinition, to destination: URL) throws {
         let encoder = JSONEncoder()
@@ -88,7 +98,7 @@ enum BuiltInThemeEditing {
 
         if let existing = try? Data(contentsOf: destination),
            let previous = try? JSONSerialization.jsonObject(with: existing) as? [String: Any] {
-            for (key, value) in previous where object[key] == nil {
+            for (key, value) in previous where !ThemeDefinition.modelledKeys.contains(key) {
                 object[key] = value
             }
         }

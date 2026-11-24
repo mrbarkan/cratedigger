@@ -844,7 +844,7 @@ public final class ThemeRegistry: ObservableObject {
             // the accent until something pins them. Against the seed the
             // editor started from, the diff is exactly what was touched.
             let shipped = manifest(for: draft.id)?.definition ?? draft
-            let patched = shipped.merging(draft.tokensChanged(from: draftSeed ?? draft))
+            let patched = BuiltInThemeEditing.patched(shipped, draft: draft, seed: draftSeed ?? draft)
             for destination in builtInDestinations {
                 try BuiltInThemeEditing.write(patched, to: destination)
             }

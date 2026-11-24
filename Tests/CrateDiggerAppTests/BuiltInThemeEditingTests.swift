@@ -122,6 +122,70 @@ final class BuiltInThemeEditingTests: XCTestCase {
         )
     }
 
+    // MARK: - A style chosen in place
+
+    /// Real Hardware is stored as absence, so choosing it for a built-in that
+    /// wears another style must take the `style` key out of the file, not
+    /// leave the old one standing; the author's `"//"` note stays.
+    func testLlamaEditedInPlaceToRealHardwareSavesNoStyle() throws {
+        let saved = try saveInPlace(themeID: "llama-97") { $0.settingStyle(.hardware) }
+        XCTAssertNil(saved.object["style"], "Real Hardware is the absence of a style")
+        XCTAssertNotNil(saved.object["//"], "the author's note survives the write")
+        XCTAssertEqual(saved.reloaded.resolvedStyle, .hardware)
+    }
+
+    func testCarbonEditedInPlaceToStickerSavesItsStyle() throws {
+        let saved = try saveInPlace(themeID: "carbon", note: "a note the model does not describe") {
+            $0.settingStyle(.sticker)
+        }
+        XCTAssertEqual(saved.object["style"] as? String, "sticker")
+        XCTAssertEqual(saved.object["//"] as? String, "a note the model does not describe")
+        XCTAssertEqual(saved.reloaded.resolvedStyle, .sticker)
+    }
+
+    /// The in-place save as `ThemeRegistry.saveDraft` runs it, against a copy
+    /// of the shipped bundle in a temp folder (never the checkout's file):
+    /// seed the draft as the editor does, apply `edit`, patch and write.
+    private func saveInPlace(
+        themeID: String,
+        note: String? = nil,
+        edit: (ThemeDefinition) -> ThemeDefinition
+    ) throws -> (object: [String: Any], reloaded: ThemeDefinition) {
+        let checkout = try XCTUnwrap(BuiltInThemeEditing.repositoryThemesDirectory)
+        let source = try XCTUnwrap(BuiltInThemeEditing.manifestURL(forThemeID: themeID, in: checkout))
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("BuiltInThemeEditingTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let bundle = directory.appendingPathComponent(
+            source.deletingLastPathComponent().lastPathComponent, isDirectory: true)
+        try FileManager.default.copyItem(at: source.deletingLastPathComponent(), to: bundle)
+        let destination = bundle.appendingPathComponent("theme.json")
+        if let note {
+            var object = try XCTUnwrap(
+                try JSONSerialization.jsonObject(with: Data(contentsOf: destination)) as? [String: Any])
+            object["//"] = note
+            try JSONSerialization.data(withJSONObject: object, options: [.prettyPrinted, .sortedKeys])
+                .write(to: destination)
+        }
+
+        let shipped = try XCTUnwrap(
+            ThemeLoaderService(bundles: [], userThemesDirectoryOverride: directory)
+                .discoverThemes().themes.first { $0.id == themeID }
+        ).definition
+        let seed = ThemeRegistry.seeded(shipped)
+        let patched = BuiltInThemeEditing.patched(shipped, draft: edit(seed), seed: seed)
+        try BuiltInThemeEditing.write(patched, to: destination)
+
+        let object = try XCTUnwrap(
+            try JSONSerialization.jsonObject(with: Data(contentsOf: destination)) as? [String: Any])
+        let reloaded = try XCTUnwrap(
+            ThemeLoaderService(bundles: [], userThemesDirectoryOverride: directory)
+                .discoverThemes().themes.first { $0.id == themeID }
+        ).definition
+        return (object, reloaded)
+    }
+
     // MARK: -
 
     private func definition(id: String) -> ThemeDefinition {
