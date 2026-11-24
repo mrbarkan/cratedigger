@@ -1054,7 +1054,7 @@ private struct ArmCancelButton: View {
             Text("CANCEL")
                 .font(CarbonFont.mono(10, weight: .bold))
                 .tracking(2.2)
-                .foregroundStyle(theme.ink2)
+                .foregroundStyle(theme.keyPrint(theme.ink2))
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 // Flat, like every other key in the app — the pillowed
                 // gradient made the two action keys the loudest thing in a

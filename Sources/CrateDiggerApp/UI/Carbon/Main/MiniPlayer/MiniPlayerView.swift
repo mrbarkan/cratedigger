@@ -271,7 +271,7 @@ private struct MiniPlayerBody: View {
         }) {
             Image(systemName: model.miniPlayerArtMode.iconName)
                 .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(artModeDisabled ? theme.ink4.opacity(0.5) : theme.ink3)
+                .foregroundStyle(artModeDisabled ? theme.ink4.opacity(0.5) : theme.keyPrint(theme.ink3))
                 .frame(width: 24, height: 24)
                 .background(ChromeChassis(theme: theme, cornerRadius: geometry.scaled(7, following: \.keyCornerRadius)))
         }
@@ -289,7 +289,7 @@ private struct MiniPlayerBody: View {
         Button(action: { ClickPlayer.shared.play(.key); action() }) {
             Image(systemName: system)
                 .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(lit ? theme.orange : theme.ink3)
+                .foregroundStyle(lit ? theme.orange : theme.keyPrint(theme.ink3))
                 // Lit while the drawer is out, at the console's lamp speeds.
                 .animation(lit ? CarbonMotion.state : CarbonMotion.lampOff, value: lit)
                 .frame(width: 24, height: 24)

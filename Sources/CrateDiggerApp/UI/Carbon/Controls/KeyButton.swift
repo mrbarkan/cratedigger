@@ -109,7 +109,7 @@ struct KeyButton<Label: View>: View {
         case .selected:      return theme.accentInk
         case .glowingOrange: return theme.orange
         case .glowingFilled: return theme.accentInk
-        case .disabled:      return theme.ink3
+        case .disabled:      return theme.keyPrint(theme.ink3)
         }
     }
 }

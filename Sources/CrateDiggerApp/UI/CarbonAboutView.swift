@@ -93,7 +93,7 @@ private struct AboutFaceplate: View {
                     .minimumScaleFactor(0.7)
                 Spacer(minLength: 0)
             }
-            .foregroundStyle(enabled ? theme.ink2 : theme.ink4)
+            .foregroundStyle(enabled ? theme.keyPrint(theme.ink2) : theme.ink4)
             .padding(.horizontal, 9)
             .frame(maxWidth: .infinity, alignment: .leading)
             .frame(height: 30)
