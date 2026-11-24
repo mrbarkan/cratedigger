@@ -69,6 +69,24 @@ final class ThemeEditorStyleTests: XCTestCase {
         XCTAssertEqual(registry.undoDepth, 0)
     }
 
+    /// Pressing the key already lit is not an edit: no undo step, and an
+    /// unstyled theme's absent style is not written out as `hardware`.
+    func testChoosingTheCurrentStyleChangesNothing() throws {
+        session.open(try manifest("base-theme"))
+        let before = registry.draft
+        XCTAssertNil(before?.style)
+        registry.setDraftStyle(.hardware)
+        XCTAssertEqual(registry.undoDepth, 0)
+        XCTAssertEqual(registry.draft, before)
+
+        session.open(try manifest("sticker-theme"))
+        let sticker = registry.draft
+        let depth = registry.undoDepth
+        registry.setDraftStyle(.sticker)
+        XCTAssertEqual(registry.undoDepth, depth)
+        XCTAssertEqual(registry.draft, sticker)
+    }
+
     func testStyleChangeLeavesTheFlatSwitchAsItWas() throws {
         session.open(try manifest("base-theme"))
         registry.draft?.effects = ["flat": 1]

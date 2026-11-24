@@ -421,8 +421,11 @@ public final class ThemeRegistry: ObservableObject {
     /// The draft's interface style, in one assignment and so one undo step.
     /// The whole console follows at once (`CarbonThemed` reads the draft), and
     /// the stored FLAT switch is left as it is for a return to Real Hardware.
+    /// Choosing the style the draft already wears is not an edit: no undo
+    /// step, and an inheriting draft's absent style is not written out.
     public func setDraftStyle(_ style: InterfaceStyle) {
-        draft = draft?.settingStyle(style)
+        guard let draft, draft.resolvedStyle != style else { return }
+        self.draft = draft.settingStyle(style)
     }
 
     /// Writes a whole set of colors in one publish, into `appearance`'s layer —

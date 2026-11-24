@@ -131,11 +131,15 @@ struct ThemePickerPane: View {
                         .foregroundStyle(isSelected ? theme.ink : theme.ink2)
                         .lineLimit(1)
                         .minimumScaleFactor(0.8)
+                    // One line whatever the inspector's width: the notes after
+                    // DEFAULT truncate rather than wrap the row.
                     HStack(spacing: 5) {
                         Text(isBuiltIn ? "DEFAULT" : "Installed")
                             .font(CarbonFont.mono(8, weight: isBuiltIn ? .bold : .regular))
                             .tracking(isBuiltIn ? 1.0 : 0)
                             .foregroundStyle(isBuiltIn ? theme.ink3 : theme.ink4)
+                            .lineLimit(1)
+                            .layoutPriority(1)
                         let style = manifest.definition.resolvedStyle
                         if style != .hardware {
                             // Real Hardware is what every theme wore before
@@ -143,6 +147,7 @@ struct ThemePickerPane: View {
                             Text("· " + style.displayName.uppercased())
                                 .font(CarbonFont.mono(8))
                                 .foregroundStyle(theme.ink4)
+                                .lineLimit(1)
                         }
                         if manifest.definition.isAdaptive {
                             // Worth calling out: it's the difference between a
@@ -150,6 +155,7 @@ struct ThemePickerPane: View {
                             Text("· LIGHT + DARK")
                                 .font(CarbonFont.mono(8))
                                 .foregroundStyle(theme.ink4)
+                                .lineLimit(1)
                         }
                     }
                 }

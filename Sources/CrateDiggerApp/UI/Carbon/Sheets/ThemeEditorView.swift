@@ -791,7 +791,8 @@ struct ThemeEditorView: View {
         .carbonTip("How the console's keys, panels and case are drawn. Colours, fonts and layout stay.")
     }
 
-    /// One assignment, so one undo step. The FLAT switch keeps its stored
+    /// One assignment, so one undo step; the style already chosen is no
+    /// step at all (`setDraftStyle`). The FLAT switch keeps its stored
     /// value whatever the style, for a return to Real Hardware.
     private func setStyle(_ style: InterfaceStyle) {
         registry.setDraftStyle(style)
@@ -803,16 +804,21 @@ struct ThemeEditorView: View {
     /// depth, so the display keeps lighting up.
     ///
     /// Real Hardware only: the other styles draw their own shadows, so the
-    /// switch is shown as it stands but cannot be pressed.
+    /// switch is shown as it stands (ON or OFF as stored) but cannot be pressed.
+    /// It is dimmed with SwiftUI's `.disabled` rather than KeyButton's disabled
+    /// style: that style also stops hit-testing, and a key that takes no hover
+    /// never shows the tip saying why it is off (as the inspector's tabs do).
     private var flatSwitch: some View {
         let flat = !theme.castsShadows
         let honoured = (draft?.resolvedStyle ?? .hardware).honoursFlatSwitch
         return KeyButton(
-            style: !honoured ? .disabled : (flat ? .selected : .normal),
+            style: flat ? .selected : .normal,
             action: { setFlat(!flat) }
         ) {
             Text(flat ? "FLAT · ON" : "FLAT · OFF")
         }
+        .disabled(!honoured)
+        .opacity(honoured ? 1 : 0.42)
         .frame(maxWidth: .infinity)
         .frame(height: 20)
         .carbonTip(!honoured
