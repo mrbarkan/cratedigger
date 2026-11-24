@@ -46,6 +46,29 @@ final class ThemeDraftSeedTests: XCTestCase {
         }
     }
 
+    /// Seeding writes every token into the draft, Key Print included (with
+    /// `ink2`'s value). That pin must be inert: the small keys that print in
+    /// `ink3` by default must not jump to `ink2` the moment Advanced opens, and
+    /// a theme saved whole from the editor must not change on update.
+    func testSeedingAShippedThemeLeavesTheKeyPrintsAlone() {
+        for manifest in manifests {
+            let seeded = ThemeRegistry.seeded(manifest.definition)
+            for appearance in [ThemeDefinition.BaseAppearance.light, .dark] {
+                let before = rendered(manifest.definition, for: appearance)
+                let after = rendered(seeded, for: appearance)
+                for (label, before, after) in [
+                    ("ink3", before.keyPrint(before.ink3), after.keyPrint(after.ink3)),
+                    ("ink2", before.keyPrint(before.ink2), after.keyPrint(after.ink2)),
+                ] {
+                    XCTAssertEqual(
+                        after.themeHexString, before.themeHexString,
+                        "\(manifest.id) · \(appearance.rawValue) · keyPrint(\(label)) moved when the editor opened"
+                    )
+                }
+            }
+        }
+    }
+
     /// The seed is also what "has the author touched this?" is measured
     /// against, so a freshly opened draft has to report no changes at all.
     func testAFreshDraftHasChangedNothing() {

@@ -65,6 +65,23 @@ final class InterfaceStyleTokenTests: XCTestCase {
         XCTAssertEqual(pinned.keyPrint(pinned.ink2), pinned.chassisInk)
     }
 
+    /// Key Print equal to the secondary ink is what the editor's seeding
+    /// writes into every draft: it is no choice, so the keys keep their own
+    /// ink. Only a Key Print that differs reaches them.
+    func testKeyPrintEqualToInk2IsInert() {
+        let seededPin = theme(colors: ["ink2": "#00E000", "ink3": "#445566", "chassisInk": "#00E000"])
+        XCTAssertEqual(seededPin.keyPrint(seededPin.ink3), seededPin.ink3)
+        XCTAssertEqual(seededPin.keyPrint(seededPin.ink2), seededPin.ink2)
+
+        let real = theme(colors: ["ink2": "#00E000", "ink3": "#445566", "chassisInk": "#1E2A1E"])
+        XCTAssertEqual(real.keyPrint(real.ink3), Color(hexString: "#1E2A1E"))
+        XCTAssertEqual(real.keyPrint(real.ink2), Color(hexString: "#1E2A1E"))
+
+        // The base's own ink2, unnamed by the theme, counts the same.
+        let inheritedInk2 = theme(colors: ["chassisInk": CarbonTheme.carbon.ink2.themeHexString])
+        XCTAssertEqual(inheritedInk2.keyPrint(inheritedInk2.ink3), inheritedInk2.ink3)
+    }
+
     // MARK: Corner radii
 
     func testStyledRadiusStaysInBounds() {
